@@ -1,0 +1,11 @@
+[
+  {
+    "address": "0xE4D872394D4cE6a3B392971F9fc187f0Ef0AE94c",
+    "func_sig": "0x7f17a0d0",
+    "opcode": "0xf1",
+    "pc": 175,
+    "tx_hash": "0x3adc9726a48fda487eb84e6389bf5674aa8707c906105040faa637ce5924d964",
+    "type": 3,
+    "description": "timestamp dependency found at contract 0xE4D872394D4cE6a3B392971F9fc187f0Ef0AE94c, function 0x7f17a0d0, CALL opcode at 175"
+  }
+]

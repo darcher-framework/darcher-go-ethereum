@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "noImplicitAny": true,
+    "removeComments": false,
+    "preserveConstEnums": true,
+    "declaration": true,
+    "sourceMap": true,
+    "target": "ES6",
+    "allowSyntheticDefaultImports": true,
+    "types": [
+      "node",
+      "jest"
+    ]
+  },
+  "exclude": [
+    "node_modules",
+    "**/*.spec.ts"
+  ],
+  "typeRoots": [
+    "node_modules/@types"
+  ],
+  "plugins": [
+    "@typescript-eslint"
+  ],
+  "include": [
+    "scripts/**/*"
+  ]
+}

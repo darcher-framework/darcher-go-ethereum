@@ -19,6 +19,7 @@ package miner
 
 import (
 	"fmt"
+	ethmonitor "github.com/ethereum/go-ethereum/ethmonitor/worker"
 	"math/big"
 	"sync/atomic"
 	"time"
@@ -64,6 +65,9 @@ type Miner struct {
 
 	canStart    int32 // can start indicates whether we can start the mining operation
 	shouldStart int32 // should start indicates whether we should start after sync
+
+	// TODO troublor modify
+	Monitor *ethmonitor.MiningMonitor
 }
 
 func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *event.TypeMux, engine consensus.Engine, isLocalBlock func(block *types.Block) bool) *Miner {
@@ -79,6 +83,26 @@ func New(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *even
 
 	return miner
 }
+
+// TODO troublor modify starts
+func NewMinerWithMonitor(eth Backend, config *Config, chainConfig *params.ChainConfig, mux *event.TypeMux, engine consensus.Engine, isLocalBlock func(block *types.Block) bool, monitor *ethmonitor.MiningMonitor) *Miner {
+	miner := &Miner{
+		eth:      eth,
+		mux:      mux,
+		engine:   engine,
+		exitCh:   make(chan struct{}),
+		worker:   NewWorkerWithMonitor(config, chainConfig, engine, eth, mux, isLocalBlock, true, monitor),
+		canStart: 1,
+		Monitor:  monitor,
+	}
+	go miner.update()
+
+	monitor.SetMiner(miner)
+
+	return miner
+}
+
+// troublor modify ends
 
 // update keeps track of the downloader events. Please be aware that this is a one shot type of update loop.
 // It's entered once and as soon as `Done` or `Failed` has been broadcasted the events are unregistered and
@@ -183,8 +207,25 @@ func (miner *Miner) SetEtherbase(addr common.Address) {
 	miner.worker.setEtherbase(addr)
 }
 
+// EnablePreseal turns on the preseal mining feature. It's enabled by default.
+// Note this function shouldn't be exposed to API, it's unnecessary for users
+// (miners) to actually know the underlying detail. It's only for outside project
+// which uses this library.
+func (miner *Miner) EnablePreseal() {
+	miner.worker.enablePreseal()
+}
+
+// DisablePreseal turns off the preseal mining feature. It's necessary for some
+// fake consensus engine which can seal blocks instantaneously.
+// Note this function shouldn't be exposed to API, it's unnecessary for users
+// (miners) to actually know the underlying detail. It's only for outside project
+// which uses this library.
+func (miner *Miner) DisablePreseal() {
+	miner.worker.disablePreseal()
+}
+
 // SubscribePendingLogs starts delivering logs from pending transactions
 // to the given channel.
-func (self *Miner) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription {
-	return self.worker.pendingLogsFeed.Subscribe(ch)
+func (miner *Miner) SubscribePendingLogs(ch chan<- []*types.Log) event.Subscription {
+	return miner.worker.pendingLogsFeed.Subscribe(ch)
 }

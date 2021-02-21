@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	ethmonitor "github.com/ethereum/go-ethereum/ethmonitor/worker"
 	"io"
 	"math/big"
 	"os"
@@ -102,12 +103,99 @@ func NewPrivateMinerAPI(e *Ethereum) *PrivateMinerAPI {
 	return &PrivateMinerAPI{e: e}
 }
 
+// TODO troublor modify starts
+func (api *PrivateMinerAPI) MineBlocks(budget uint64) (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.mineBlocks() is disabled when monitor is disabled")
+	}
+	task := ethmonitor.NewBudgetTask(context.Background(), api.e, int64(budget))
+	err := api.e.miner.Monitor.AssignMiningTask(task)
+	return fmt.Sprintf("mine %d blocks", budget), err
+}
+
+func (api *PrivateMinerAPI) MineBlockInterval(interval uint) (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.mineBlocks() is disabled when monitor is disabled")
+	}
+	if interval <= 0 {
+		return "", fmt.Errorf("invalid value of time interval %d", interval)
+	}
+	task := ethmonitor.NewIntervalTask(context.Background(), api.e, interval)
+	err := api.e.miner.Monitor.AssignMiningTask(task)
+	return fmt.Sprintf("mine block with time interval %dms", interval), err
+}
+
+func (api *PrivateMinerAPI) MineWhenTx() (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.mineBlocks() is disabled when monitor is disabled")
+	}
+	task := ethmonitor.NewTxMonitorTask(context.Background(), api.e, api.e.txPool)
+	err := api.e.miner.Monitor.AssignMiningTask(task)
+	return fmt.Sprintf("mine block when there are txs in txPool"), err
+}
+
+func (api *PrivateMinerAPI) MineTx(txHash common.Hash) (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.mineBlocks() is disabled when monitor is disabled")
+	}
+	tx := api.e.txPool.Get(txHash)
+	if tx == nil {
+		// the tx is not in the txPool
+		return "", fmt.Errorf("tx does not exist: %s", txHash.Hex())
+	}
+	task := ethmonitor.NewTxExecuteTask(context.Background(), api.e, tx)
+	err := api.e.miner.Monitor.AssignMiningTask(task)
+	return fmt.Sprintf("mine transaction %s", txHash.Hex()), err
+}
+
+func (api *PrivateMinerAPI) MineBlocksWithoutTx(budget uint64) (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.mineBlocksWithoutTx() is disabled when monitor is disabled")
+	}
+	task := ethmonitor.NewBudgetWithoutTxTask(context.Background(), api.e, int64(budget))
+	err := api.e.miner.Monitor.AssignMiningTask(task)
+	return fmt.Sprintf("mine %d blocks without transactions", budget), err
+}
+
+func (api *PrivateMinerAPI) MineBlocksExceptTx(budget uint64, txHash string) (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.mineBlocksExceptTx() is disabled when monitor is disabled")
+	}
+	task := ethmonitor.NewBudgetExceptTxTask(context.Background(), api.e, int64(budget), txHash)
+	err := api.e.miner.Monitor.AssignMiningTask(task)
+	return fmt.Sprintf("mine %d blocks except transaction %s", budget, txHash), err
+}
+
+func (api *PrivateMinerAPI) MineRegularly(interval uint64) (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.regular() is disabled when monitor is disabled")
+	}
+	api.e.miner.Monitor.MineRegularly(time.Duration(interval) * time.Second)
+	return fmt.Sprintf("mine regularly with interval %d seconds", interval), nil
+}
+
+func (api *PrivateMinerAPI) StopMiningRegularly() (string, error) {
+	if api.e.miner.Monitor == nil {
+		return "", fmt.Errorf("miner.stopRegular() is disabled when monitor is disabled")
+	}
+	api.e.miner.Monitor.StopMiningRegularly()
+	return fmt.Sprintf("stop mining regularly"), nil
+}
+
+// troublor modify ends
+
 // Start starts the miner with the given number of threads. If threads is nil,
 // the number of workers started is equal to the number of logical CPUs that are
 // usable by this process. If mining is already running, this method adjust the
 // number of threads allowed to use and updates the minimum price required by the
 // transaction pool.
 func (api *PrivateMinerAPI) Start(threads *int) error {
+	// TODO troublor modify starts
+	if api.e.miner.Monitor != nil {
+		return fmt.Errorf("miner.start() is disabled when monitor is enabled. To disable monitor, use option --monitorport=-1")
+	}
+	// troublor modify ends
+
 	if threads == nil {
 		return api.e.StartMining(runtime.NumCPU())
 	}
@@ -118,6 +206,12 @@ func (api *PrivateMinerAPI) Start(threads *int) error {
 // the block creation level.
 func (api *PrivateMinerAPI) Stop() {
 	api.e.StopMining()
+
+	// TODO troublor modify starts: stop mining tasks
+	if api.e.miner.Monitor != nil {
+		api.e.miner.Monitor.StopMiningTask()
+	}
+	// troublor modify ends
 }
 
 // SetExtra sets the extra data string that is included when this miner mines a block.
@@ -166,8 +260,16 @@ func NewPrivateAdminAPI(eth *Ethereum) *PrivateAdminAPI {
 	return &PrivateAdminAPI{eth: eth}
 }
 
-// ExportChain exports the current blockchain into a local file.
-func (api *PrivateAdminAPI) ExportChain(file string) (bool, error) {
+// ExportChain exports the current blockchain into a local file,
+// or a range of blocks if first and last are non-nil
+func (api *PrivateAdminAPI) ExportChain(file string, first *uint64, last *uint64) (bool, error) {
+	if first == nil && last != nil {
+		return false, errors.New("last cannot be specified without first")
+	}
+	if first != nil && last == nil {
+		head := api.eth.BlockChain().CurrentHeader().Number.Uint64()
+		last = &head
+	}
 	if _, err := os.Stat(file); err == nil {
 		// File already exists. Allowing overwrite could be a DoS vecotor,
 		// since the 'file' may point to arbitrary paths on the drive
@@ -187,7 +289,11 @@ func (api *PrivateAdminAPI) ExportChain(file string) (bool, error) {
 	}
 
 	// Export the blockchain
-	if err := api.eth.BlockChain().Export(writer); err != nil {
+	if first != nil {
+		if err := api.eth.BlockChain().ExportN(writer, *first, *last); err != nil {
+			return false, err
+		}
+	} else if err := api.eth.BlockChain().Export(writer); err != nil {
 		return false, err
 	}
 	return true, nil
@@ -339,70 +445,50 @@ func (api *PrivateDebugAPI) GetBadBlocks(ctx context.Context) ([]*BadBlockArgs, 
 	return results, nil
 }
 
-// AccountRangeResult returns a mapping from the hash of an account addresses
-// to its preimage. It will return the JSON null if no preimage is found.
-// Since a query can return a limited amount of results, a "next" field is
-// also present for paging.
-type AccountRangeResult struct {
-	Accounts map[common.Hash]*common.Address `json:"accounts"`
-	Next     common.Hash                     `json:"next"`
-}
-
-func accountRange(st state.Trie, start *common.Hash, maxResults int) (AccountRangeResult, error) {
-	if start == nil {
-		start = &common.Hash{0}
-	}
-	it := trie.NewIterator(st.NodeIterator(start.Bytes()))
-	result := AccountRangeResult{Accounts: make(map[common.Hash]*common.Address), Next: common.Hash{}}
-
-	if maxResults > AccountRangeMaxResults {
-		maxResults = AccountRangeMaxResults
-	}
-
-	for i := 0; i < maxResults && it.Next(); i++ {
-		if preimage := st.GetKey(it.Key); preimage != nil {
-			addr := &common.Address{}
-			addr.SetBytes(preimage)
-			result.Accounts[common.BytesToHash(it.Key)] = addr
-		} else {
-			result.Accounts[common.BytesToHash(it.Key)] = nil
-		}
-	}
-
-	if it.Next() {
-		result.Next = common.BytesToHash(it.Key)
-	}
-
-	return result, nil
-}
-
 // AccountRangeMaxResults is the maximum number of results to be returned per call
 const AccountRangeMaxResults = 256
 
-// AccountRange enumerates all accounts in the latest state
-func (api *PrivateDebugAPI) AccountRange(ctx context.Context, start *common.Hash, maxResults int) (AccountRangeResult, error) {
-	var statedb *state.StateDB
+// AccountRange enumerates all accounts in the given block and start point in paging request
+func (api *PublicDebugAPI) AccountRange(blockNrOrHash rpc.BlockNumberOrHash, start []byte, maxResults int, nocode, nostorage, incompletes bool) (state.IteratorDump, error) {
+	var stateDb *state.StateDB
 	var err error
-	block := api.eth.blockchain.CurrentBlock()
 
-	if len(block.Transactions()) == 0 {
-		statedb, err = api.computeStateDB(block, defaultTraceReexec)
-		if err != nil {
-			return AccountRangeResult{}, err
+	if number, ok := blockNrOrHash.Number(); ok {
+		if number == rpc.PendingBlockNumber {
+			// If we're dumping the pending state, we need to request
+			// both the pending block as well as the pending state from
+			// the miner and operate on those
+			_, stateDb = api.eth.miner.Pending()
+		} else {
+			var block *types.Block
+			if number == rpc.LatestBlockNumber {
+				block = api.eth.blockchain.CurrentBlock()
+			} else {
+				block = api.eth.blockchain.GetBlockByNumber(uint64(number))
+			}
+			if block == nil {
+				return state.IteratorDump{}, fmt.Errorf("block #%d not found", number)
+			}
+			stateDb, err = api.eth.BlockChain().StateAt(block.Root())
+			if err != nil {
+				return state.IteratorDump{}, err
+			}
 		}
-	} else {
-		_, _, statedb, err = api.computeTxEnv(block.Hash(), len(block.Transactions())-1, 0)
+	} else if hash, ok := blockNrOrHash.Hash(); ok {
+		block := api.eth.blockchain.GetBlockByHash(hash)
+		if block == nil {
+			return state.IteratorDump{}, fmt.Errorf("block %s not found", hash.Hex())
+		}
+		stateDb, err = api.eth.BlockChain().StateAt(block.Root())
 		if err != nil {
-			return AccountRangeResult{}, err
+			return state.IteratorDump{}, err
 		}
 	}
 
-	trie, err := statedb.Database().OpenTrie(block.Header().Root)
-	if err != nil {
-		return AccountRangeResult{}, err
+	if maxResults > AccountRangeMaxResults || maxResults <= 0 {
+		maxResults = AccountRangeMaxResults
 	}
-
-	return accountRange(trie, start, maxResults)
+	return stateDb.IteratorDump(nocode, nostorage, incompletes, start, maxResults), nil
 }
 
 // StorageRangeResult is the result of a debug_storageRangeAt API call.
@@ -419,8 +505,13 @@ type storageEntry struct {
 }
 
 // StorageRangeAt returns the storage at the given block height and transaction index.
-func (api *PrivateDebugAPI) StorageRangeAt(ctx context.Context, blockHash common.Hash, txIndex int, contractAddress common.Address, keyStart hexutil.Bytes, maxResult int) (StorageRangeResult, error) {
-	_, _, statedb, err := api.computeTxEnv(blockHash, txIndex, 0)
+func (api *PrivateDebugAPI) StorageRangeAt(blockHash common.Hash, txIndex int, contractAddress common.Address, keyStart hexutil.Bytes, maxResult int) (StorageRangeResult, error) {
+	// Retrieve the block
+	block := api.eth.blockchain.GetBlockByHash(blockHash)
+	if block == nil {
+		return StorageRangeResult{}, fmt.Errorf("block %#x not found", blockHash)
+	}
+	_, _, statedb, err := api.computeTxEnv(block, txIndex, 0)
 	if err != nil {
 		return StorageRangeResult{}, err
 	}

@@ -47,3 +47,10 @@ profile.cov
 /dashboard/assets/package-lock.json
 
 **/yarn-error.log
+
+node_modules/
+scripts/contract_oracles/blockchain/
+blockchain/doer
+blockchain/talker
+blockchain/geth
+blockchain/history

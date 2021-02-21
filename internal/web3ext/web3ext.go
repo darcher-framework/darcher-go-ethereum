@@ -33,6 +33,7 @@ var Modules = map[string]string{
 	"swarmfs":    SwarmfsJs,
 	"txpool":     TxpoolJs,
 	"les":        LESJs,
+	"lespay":     LESPayJs,
 }
 
 const ChequebookJs = `
@@ -74,7 +75,7 @@ web3._extend({
 			name: 'getSnapshot',
 			call: 'clique_getSnapshot',
 			params: 1,
-			inputFormatter: [web3._extend.utils.fromDecimal]
+			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'getSnapshotAtHash',
@@ -85,7 +86,7 @@ web3._extend({
 			name: 'getSigners',
 			call: 'clique_getSigners',
 			params: 1,
-			inputFormatter: [web3._extend.utils.fromDecimal]
+			inputFormatter: [web3._extend.formatters.inputBlockNumberFormatter]
 		}),
 		new web3._extend.Method({
 			name: 'getSignersAtHash',
@@ -172,8 +173,8 @@ web3._extend({
 		new web3._extend.Method({
 			name: 'exportChain',
 			call: 'admin_exportChain',
-			params: 1,
-			inputFormatter: [null]
+			params: 3,
+			inputFormatter: [null, null, null]
 		}),
 		new web3._extend.Method({
 			name: 'importChain',
@@ -230,7 +231,8 @@ web3._extend({
 		new web3._extend.Method({
 			name: 'accountRange',
 			call: 'debug_accountRange',
-			params: 2
+			params: 6,
+			inputFormatter: [web3._extend.formatters.inputDefaultBlockNumberFormatter, null, null, null, null, null],
 		}),
 		new web3._extend.Method({
 			name: 'printBlock',
@@ -428,6 +430,12 @@ web3._extend({
 			inputFormatter: [null, null]
 		}),
 		new web3._extend.Method({
+			name: 'traceCall',
+			call: 'debug_traceCall',
+			params: 3,
+			inputFormatter: [null, null, null]
+		}),
+		new web3._extend.Method({
 			name: 'preimage',
 			call: 'debug_preimage',
 			params: 1,
@@ -561,10 +569,63 @@ web3._extend({
 });
 `
 
+// TODO troublor modify
 const MinerJs = `
 web3._extend({
 	property: 'miner',
 	methods: [
+		new web3._extend.Method({
+			name: 'mineBlocks',
+			call: 'miner_mineBlocks',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'mineBlockInterval',
+			call: 'miner_mineBlockInterval',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'stopMiningBlockInterval',
+			call: 'miner_stopMiningBlockInterval'
+		}),
+		new web3._extend.Method({
+			name: 'mineWhenTx',
+			call: 'miner_mineWhenTx',
+		}),
+		new web3._extend.Method({
+			name: 'stopMiningWhenTx',
+			call: 'miner_stopMiningWhenTx'
+		}),
+		new web3._extend.Method({
+			name: 'mineTx',
+			call: 'miner_mineTx',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'mineBlocksWithoutTx',
+			call: 'miner_mineBlocksWithoutTx',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'mineBlocksExceptTx',
+			call: 'miner_mineBlocksExceptTx',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'regular',
+			call: 'miner_mineRegularly',
+			params: 1,
+			inputFormatter: [null]
+		}),
+		new web3._extend.Method({
+			name: 'stopRegular',
+			call: 'miner_stopMiningRegularly',
+		}),
 		new web3._extend.Method({
 			name: 'start',
 			call: 'miner_start',
@@ -852,6 +913,37 @@ web3._extend({
 		new web3._extend.Property({
 			name: 'serverInfo',
 			getter: 'les_serverInfo'
+		}),
+	]
+});
+`
+
+const LESPayJs = `
+web3._extend({
+	property: 'lespay',
+	methods:
+	[
+		new web3._extend.Method({
+			name: 'distribution',
+			call: 'lespay_distribution',
+			params: 2
+		}),
+		new web3._extend.Method({
+			name: 'timeout',
+			call: 'lespay_timeout',
+			params: 2
+		}),
+		new web3._extend.Method({
+			name: 'value',
+			call: 'lespay_value',
+			params: 2
+		}),
+	],
+	properties:
+	[
+		new web3._extend.Property({
+			name: 'requestStats',
+			getter: 'lespay_requestStats'
 		}),
 	]
 });

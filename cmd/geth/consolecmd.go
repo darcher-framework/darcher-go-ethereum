@@ -18,6 +18,10 @@ package main
 
 import (
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/vm"
+	ethmonitor_rpc "github.com/ethereum/go-ethereum/ethmonitor/rpc"
+	ethmonitor "github.com/ethereum/go-ethereum/ethmonitor/worker"
+	"github.com/ethereum/go-ethereum/internal/ethapi"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -78,12 +82,35 @@ JavaScript API. See https://github.com/ethereum/go-ethereum/wiki/JavaScript-Cons
 func localConsole(ctx *cli.Context) error {
 	// Create and start the node based on the CLI flags
 	prepare(ctx)
-	node := makeFullNode(ctx)
-	startNode(ctx, node)
-	defer node.Close()
+	// TODO troublor modify starts
+	var role ethmonitor_rpc.Role
+	if ctx.GlobalBool(utils.TalkerFlag.Name) {
+		role = ethmonitor_rpc.Role_TALKER
+	} else {
+		role = ethmonitor_rpc.Role_DOER
+	}
+	if ctx.GlobalBool(utils.EVMAnalyer.Name) {
+		vm.EnableEVMAnalyzer()
+	}
+	monitorAddress := ctx.GlobalString(utils.MonitorAddress.Name)
+	var stack *node.Node
+	var backend ethapi.Backend
+	if monitorAddress == "disable" {
+		// troublor modify ends
+		stack, backend = makeFullNode(ctx)
+		startNode(ctx, stack, backend)
+		// TODO troublor modify starts
+	} else {
+		monitor := ethmonitor.NewMonitor(role, monitorAddress)
+		stack, backend = makeFullNodeWithMonitor(ctx, monitor)
+		startNode(ctx, stack, backend)
+		monitor.NotifyNodeStart(stack)
+	}
+	// troublor modify ends
+	defer stack.Close()
 
 	// Attach to the newly started node and start the JavaScript console
-	client, err := node.Attach()
+	client, err := stack.Attach()
 	if err != nil {
 		utils.Fatalf("Failed to attach to the inproc geth: %v", err)
 	}
@@ -123,10 +150,21 @@ func remoteConsole(ctx *cli.Context) error {
 			path = ctx.GlobalString(utils.DataDirFlag.Name)
 		}
 		if path != "" {
-			if ctx.GlobalBool(utils.TestnetFlag.Name) {
-				path = filepath.Join(path, "testnet")
+			if ctx.GlobalBool(utils.LegacyTestnetFlag.Name) || ctx.GlobalBool(utils.RopstenFlag.Name) {
+				// Maintain compatibility with older Geth configurations storing the
+				// Ropsten database in `testnet` instead of `ropsten`.
+				legacyPath := filepath.Join(path, "testnet")
+				if _, err := os.Stat(legacyPath); !os.IsNotExist(err) {
+					path = legacyPath
+				} else {
+					path = filepath.Join(path, "ropsten")
+				}
 			} else if ctx.GlobalBool(utils.RinkebyFlag.Name) {
 				path = filepath.Join(path, "rinkeby")
+			} else if ctx.GlobalBool(utils.GoerliFlag.Name) {
+				path = filepath.Join(path, "goerli")
+			} else if ctx.GlobalBool(utils.YoloV1Flag.Name) {
+				path = filepath.Join(path, "yolo-v1")
 			}
 		}
 		endpoint = fmt.Sprintf("%s/geth.ipc", path)
@@ -179,12 +217,12 @@ func dialRPC(endpoint string) (*rpc.Client, error) {
 // everything down.
 func ephemeralConsole(ctx *cli.Context) error {
 	// Create and start the node based on the CLI flags
-	node := makeFullNode(ctx)
-	startNode(ctx, node)
-	defer node.Close()
+	stack, backend := makeFullNode(ctx)
+	startNode(ctx, stack, backend)
+	defer stack.Close()
 
 	// Attach to the newly started node and start the JavaScript console
-	client, err := node.Attach()
+	client, err := stack.Attach()
 	if err != nil {
 		utils.Fatalf("Failed to attach to the inproc geth: %v", err)
 	}

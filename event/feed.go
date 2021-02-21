@@ -97,6 +97,11 @@ func (f *Feed) typecheck(typ reflect.Type) bool {
 		f.etype = typ
 		return true
 	}
+	// TODO troublor modify starts: check interface type
+	if f.etype.Kind() == reflect.Interface {
+		return typ.Implements(f.etype)
+	}
+	// troublor modify ends
 	return f.etype == typ
 }
 
@@ -138,6 +143,7 @@ func (f *Feed) Send(value interface{}) (nsent int) {
 
 	if !f.typecheck(rvalue.Type()) {
 		f.sendLock <- struct{}{}
+		f.mu.Unlock()
 		panic(feedTypeError{op: "Send", got: rvalue.Type(), want: f.etype})
 	}
 	f.mu.Unlock()
